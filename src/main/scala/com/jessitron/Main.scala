@@ -11,42 +11,54 @@ import org.apache.velocity.{Template, VelocityContext}
 object Main {
   def main(args: Array[String]) {
     val USAGE = "Usage: velocli <template_file> [--parameter value]..."
+
+    parse(args) match {
+      case Exit1(errors) =>
+        println(USAGE)
+        errors.foreach(System.err.println)
+        System.exit(1)
+      case Fine(templateFilename, parameters) =>
+        val ve: VelocityEngine = new VelocityEngine
+        ve.init
+        val t: Template = ve.getTemplate(templateFilename)
+        val context: VelocityContext = new VelocityContext
+
+        parameters.foreach { case (k, v) =>
+          println(s"Setting $k to $v")
+          context.put(k, v)
+        }
+        val writer: StringWriter = new StringWriter
+        t.merge(context, writer)
+        System.out.println(writer.toString)
+    }
+  }
+
+  sealed trait ParseInstruction
+
+  case class Exit1(printToStderr: Seq[String]) extends ParseInstruction
+
+  case class Fine(filename: String, parameters: Map[String, String]) extends ParseInstruction
+
+  def parse(args: Seq[String]): ParseInstruction = {
     val Stuff(_, errors, unlabeledArgs, parameters) = something(Stuff(args))
+
     if (errors.nonEmpty) {
-      println(USAGE)
-      errors.foreach(System.err.println)
-      System.exit(1)
+      Exit1(errors)
     }
     if (unlabeledArgs.isEmpty) {
-      println(USAGE)
-      System.err.println("Please supply a template filename")
-      System.exit(1)
+      Exit1(Seq("Please supply a template filename"))
     }
     if (unlabeledArgs.size > 1) {
-      println(USAGE)
-      System.err.println("Please supply only one template filename")
-      System.err.println(s"(You supplied ${unlabeledArgs.mkString(" and ")}")
-      System.exit(1)
+      Exit1(Seq("Please supply only one template filename",
+        s"(You supplied ${unlabeledArgs.mkString(" and ")}"))
     }
 
     val templateFilename: String = unlabeledArgs.head
 
     if (!new File(templateFilename).exists()) {
-      System.err.println(s"File $templateFilename not found.")
-      System.exit(1)
+      Exit1(Seq(s"File $templateFilename not found."))
     }
-    val ve: VelocityEngine = new VelocityEngine
-    ve.init
-    val t: Template = ve.getTemplate(templateFilename)
-    val context: VelocityContext = new VelocityContext
-
-    parameters.foreach { case (k, v) =>
-      println(s"Setting $k to $v")
-      context.put(k, v)
-    }
-    val writer: StringWriter = new StringWriter
-    t.merge(context, writer)
-    System.out.println(writer.toString)
+    Fine(templateFilename, parameters)
   }
 
   type FailureDescription = String
@@ -65,7 +77,7 @@ object Main {
       val next = rest.head
       if (next.startsWith("--")) {
         val parameter = next.substring(2)
-        if (rest.tail.isEmpty) {
+        if (rest.tail.isEmpty || rest.tail.head.startsWith("--")) {
           stuff.copy(errors = errors :+ s"No value supplied for ${parameter}")
         }
         val moreParameters = parameters + (parameter -> rest.tail.head)
