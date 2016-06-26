@@ -1,0 +1,6 @@
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+target_dir=$DIR/../target
+
+java -classpath $target_dir/*dependencies.jar com.jessitron.Main $*
