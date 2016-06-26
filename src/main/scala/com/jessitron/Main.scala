@@ -40,25 +40,20 @@ object Main {
   case class Fine(filename: String, parameters: Map[String, String]) extends ParseInstruction
 
   def parse(args: Seq[String]): ParseInstruction = {
-    val Stuff(_, errors, unlabeledArgs, parameters) = something(Stuff(args))
-
-    if (errors.nonEmpty) {
-      Exit1(errors)
+    something(Stuff(args)) match {
+      case Stuff(_, errors, _, _) if errors.nonEmpty =>
+        Exit1(errors)
+      case Stuff(_, _, unlabeledArgs, _) if unlabeledArgs.isEmpty =>
+        Exit1(Seq("Please supply a template filename"))
+      case Stuff(_, _, unlabeledArgs, _) if unlabeledArgs.size > 1 =>
+        Exit1(Seq("Please supply only one template filename",
+          s"(You supplied ${unlabeledArgs.mkString(" and ")}"))
+      case Stuff(_, _, Seq(templateFilename), _)
+        if !new File(templateFilename).exists() =>
+        Exit1(Seq(s"File $templateFilename not found."))
+      case Stuff(_, _, Seq(templateFilename), parameters) =>
+        Fine(templateFilename, parameters)
     }
-    if (unlabeledArgs.isEmpty) {
-      Exit1(Seq("Please supply a template filename"))
-    }
-    if (unlabeledArgs.size > 1) {
-      Exit1(Seq("Please supply only one template filename",
-        s"(You supplied ${unlabeledArgs.mkString(" and ")}"))
-    }
-
-    val templateFilename: String = unlabeledArgs.head
-
-    if (!new File(templateFilename).exists()) {
-      Exit1(Seq(s"File $templateFilename not found."))
-    }
-    Fine(templateFilename, parameters)
   }
 
   type FailureDescription = String
@@ -70,22 +65,22 @@ object Main {
                   )
 
   def something(stuff: Stuff): Stuff = {
-    import stuff._
-    if (rest.isEmpty) {
-      stuff
-    } else {
-      val next = rest.head
-      if (next.startsWith("--")) {
-        val parameter = next.substring(2)
-        if (rest.tail.isEmpty || rest.tail.head.startsWith("--")) {
-          stuff.copy(errors = errors :+ s"No value supplied for ${parameter}")
+    stuff.rest match {
+      case Seq() => stuff
+      case Seq(one) if one.startsWith("--") =>
+        stuff.copy(errors = stuff.errors :+ s"No value supplied for $one")
+      case Seq(next, value, tail@_*) if next.startsWith("--") =>
+        if (value.startsWith("--")) {
+          something(stuff.copy(errors = stuff.errors :+ s"No value supplied for $next", rest = value +: tail))
+        } else {
+          val parameter = next.substring(2)
+          val moreParameters = stuff.parameters + (parameter -> value)
+          something(stuff.copy(parameters = moreParameters, rest = tail))
         }
-        val moreParameters = parameters + (parameter -> rest.tail.head)
-        something(stuff.copy(parameters = moreParameters, rest = rest.tail.tail))
-      } else {
+      case Seq(next, rest@_*) =>
         // maybe this is the filename
-        something(stuff.copy(unlabeledArgs = unlabeledArgs :+ next, rest = rest.tail))
-      }
+        something(stuff.copy(unlabeledArgs = stuff.unlabeledArgs :+ next, rest = rest))
     }
   }
+
 }
